@@ -1,0 +1,1718 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<displays>
+<folder>
+	<name><![CDATA[SQL_RPT]]></name>
+	<tooltip><![CDATA[By Vishalbh]]></tooltip>
+	<description><![CDATA[By Vishalbh
+]]></description>
+		<display id="2ccd4d46-0180-1000-8001-c0a83801c26d" type="" style="Table" enable="true">
+		<name><![CDATA[ASM_Diskgroup]]></name>
+		<description><![CDATA[]]></description>
+		<tooltip><![CDATA[]]></tooltip>
+		<drillclass><![CDATA[]]></drillclass>
+		<CustomValues>
+			<TYPE><![CDATA[horizontal]]></TYPE>
+		</CustomValues>
+		<query>
+			<sql><![CDATA[SELECT
+    name                                     group_name
+  , sector_size                              sector_size
+  , block_size                               block_size
+  , allocation_unit_size                     allocation_unit_size
+  , state                                    state
+  , type                                     type
+  , total_mb                                 total_mb
+  , (total_mb - free_mb)                     used_mb
+  , ROUND((1- (free_mb / total_mb))*100, 2)  pct_used
+FROM
+    v$asm_diskgroup
+WHERE
+    total_mb != 0
+ORDER BY
+    name]]></sql>
+		</query>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[ASM_DISKS]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[SELECT
+   b.path                                           disk_file_path
+  , b.name                                           disk_file_name
+  , b.failgroup                                      disk_file_fail_group
+  , b.total_mb                                       total_mb
+  , (b.total_mb - b.free_mb)                         used_mb
+  , b.free_mb										 free_mb
+  , ROUND((1- (b.free_mb / b.total_mb))*100, 2)      pct_used
+FROM
+    v$asm_diskgroup a RIGHT OUTER JOIN v$asm_disk b USING (group_number) 
+    where a.name= :GROUP_NAME]]></sql>
+				<binds>
+					<bind id="GROUP_NAME">
+						<prompt><![CDATA[GROUP_NAME]]></prompt>
+						<tooltip><![CDATA[GROUP_NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[CLIENT]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[SELECT
+    a.name              disk_group_name
+  , c.instance_name     instance_name
+  , c.db_name           db_name
+  , c.status            status
+FROM
+    v$asm_diskgroup a JOIN Gv$asm_client c USING (group_number)
+ where a.name= :GROUP_NAME]]></sql>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[ALL_CLIENT]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[SELECT
+    a.name              disk_group_name
+  , c.instance_name     instance_name
+  , c.db_name           db_name
+  , c.status            status
+FROM
+    v$asm_diskgroup a JOIN Gv$asm_client c USING (group_number)
+ORDER BY instance_name]]></sql>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[FILES]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[SELECT
+    CONCAT('+' || db_files.disk_group_name, SYS_CONNECT_BY_PATH(db_files.alias_name, '/')) full_path
+  , db_files.bytes
+  , db_files.space
+  , NVL(LPAD(db_files.type, 18), '<DIRECTORY>')  type
+  , db_files.creation_date
+  , db_files.disk_group_name
+  , LPAD(db_files.system_created, 4) system_created
+FROM
+    ( SELECT
+          g.name               disk_group_name
+        , a.parent_index       pindex
+        , a.name               alias_name
+        , a.reference_index    rindex
+        , a.system_created     system_created
+        , ROUND(f.bytes /1024/1024/1024,2  )           bytes
+        , ROUND(f.space /1024/1024/1024 ,2)              space
+        , f.type               type
+        , TO_CHAR(f.creation_date, 'DD-MON-YYYY HH24:MI:SS')  creation_date
+      FROM
+          v$asm_file f RIGHT OUTER JOIN v$asm_alias     a USING (group_number, file_number)
+                                   JOIN v$asm_diskgroup g USING (group_number)
+                                   WHERE G.NAME=:GROUP_NAME
+    ) db_files
+WHERE db_files.type IS NOT NULL
+START WITH (MOD(db_files.pindex, POWER(2, 24))) = 0
+    CONNECT BY PRIOR db_files.rindex = db_files.pindex
+UNION
+SELECT
+    '+' || volume_files.disk_group_name ||  ' [' || volume_files.volume_name || '] ' ||  volume_files.volume_device full_path
+  , volume_files.bytes
+  , volume_files.space
+  , NVL(LPAD(volume_files.type, 18), '<DIRECTORY>')  type
+  , volume_files.creation_date
+  , volume_files.disk_group_name
+  , null
+FROM
+    ( SELECT
+          g.name               disk_group_name
+        , v.volume_name        volume_name
+        , v.volume_device       volume_device
+        , f.bytes              bytes
+        , f.space              space
+        , f.type               type
+        , TO_CHAR(f.creation_date, 'DD-MON-YYYY HH24:MI:SS')  creation_date
+      FROM
+          v$asm_file f RIGHT OUTER JOIN v$asm_volume    v USING (group_number, file_number)
+                                   JOIN v$asm_diskgroup g USING (group_number)
+                                   WHERE G.NAME=:GROUP_NAME
+    ) volume_files
+WHERE volume_files.type IS NOT NULL]]></sql>
+			</query>
+		</display>
+	</display>
+	<display id="2ce1197b-0180-1000-8006-c0a83801c26d" type="" style="Table" enable="true">
+		<name><![CDATA[TableSpace]]></name>
+		<description><![CDATA[Tablespace]]></description>
+		<tooltip><![CDATA[tablespace]]></tooltip>
+		<drillclass><![CDATA[]]></drillclass>
+		<CustomValues>
+			<TYPE><![CDATA[horizontal]]></TYPE>
+		</CustomValues>
+		<query minversion="10.1">
+			<sql><![CDATA[SELECT
+    d.status                                            status
+ , d.tablespace_name                                   name
+  , ROUND((a.bytes - NVL(f.bytes, 0)) / a.bytes * 100, 2) pct_used
+ , ROUND(a.bytes/1024/1024, 2)                                     ts_size
+ , ROUND(a.bytes/1024/1024 - NVL(f.bytes/1024/1024, 0), 2)                   used
+  --, NVL(f.bytes, 0)                                     free
+  , d.contents                                          type
+ , d.extent_management                                 extent_mgt
+ , d.segment_space_management                          segment_mgt
+ , D.BIGFILE
+ ,D.ENCRYPTED
+FROM
+    sys.dba_tablespaces d
+ , ( select tablespace_name, sum(bytes) bytes
+      from dba_data_files
+      group by tablespace_name
+    ) a
+ , ( select tablespace_name, sum(bytes) bytes
+      from dba_free_space
+      group by tablespace_name
+    ) f
+WHERE
+      d.tablespace_name = a.tablespace_name(+)
+  AND d.tablespace_name = f.tablespace_name(+)
+  AND NOT (
+    d.extent_management like 'LOCAL'
+    AND
+    d.contents like 'TEMPORARY'
+  )
+ORDER BY
+  pct_used DESC]]></sql>
+		</query>
+		<query minversion="11.2">
+			<sql><![CDATA[SELECT
+    d.status                                            status
+ , d.tablespace_name                                   name
+  , ROUND((a.bytes - NVL(f.bytes, 0)) / a.bytes * 100, 2) pct_used
+ , ROUND(a.bytes/1024/1024, 2)                                     ts_size
+ , ROUND(a.bytes/1024/1024 - NVL(f.bytes/1024/1024, 0), 2)                   used
+  --, NVL(f.bytes, 0)                                     free
+  , d.contents                                          type
+ , d.extent_management                                 extent_mgt
+ , d.segment_space_management                          segment_mgt
+ , D.BIGFILE
+ ,D.ENCRYPTED
+FROM
+    sys.dba_tablespaces d
+ , ( select tablespace_name, sum(bytes) bytes
+      from dba_data_files
+      group by tablespace_name
+    ) a
+ , ( select tablespace_name, sum(bytes) bytes
+      from dba_free_space
+      group by tablespace_name
+    ) f
+WHERE
+      d.tablespace_name = a.tablespace_name(+)
+  AND d.tablespace_name = f.tablespace_name(+)
+  AND NOT (
+    d.extent_management like 'LOCAL'
+    AND
+    d.contents like 'TEMPORARY'
+  )
+ORDER BY
+  pct_used DESC]]></sql>
+		</query>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[Datafiles]]></name>
+			<description><![CDATA[Datafile		]]></description>
+			<tooltip><![CDATA[Datafile]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[SELECT /*+ ordered */
+    d.tablespace_name                     tablespace
+  , d.file_name                           filename
+  , round(d.bytes/1024/1024/1024 ,2)                              sise_GB
+  , round((d.increment_by * e.value)/1024/1024)              INCR_MB
+  , round (d.maxbytes /1024/1024/1024 ,2)                                MAX_GB
+    , d.autoextensible                      autoextensible
+    ,d.status
+    ,d.online_status
+FROM
+    sys.dba_data_files d
+  , v$datafile v
+  , (SELECT value
+     FROM v$parameter 
+     WHERE name = 'db_block_size') e
+WHERE
+  (d.file_name = v.name)
+ and  (:NAME is null or 
+                                       instr(lower(d.tablespace_name),lower(:NAME)) > 0)]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[DDL]]></name>
+			<description><![CDATA[DDL	]]></description>
+			<tooltip><![CDATA[DDL]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select dbms_metadata.get_ddl('TABLESPACE',tb.tablespace_name) "DDL" from dba_tablespaces tb where (:NAME is null or 
+                                       instr(upper(tb.tablespace_name),upper(:NAME)) > 0)]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[QUOTA]]></name>
+			<description><![CDATA[QUOTA	]]></description>
+			<tooltip><![CDATA[QUOTA]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select tablespace_name "Tablespace_Name", 
+                                      username "Username",
+                                      bytes/1024/1024 "Megabytes", 
+                                      (case when max_bytes = -1 then null 
+                                            else max_bytes/1024/1024 end) "Max_Megabytes",
+                                      (case when max_bytes = -1 then 'UNLIMITED' 
+                                            else null end) "Quota"
+                                 from sys.dba_ts_quotas
+                                where (:NAME is null or 
+                                       instr(lower(tablespace_name),lower(:NAME)) > 0)
+                                order by tablespace_name, username]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[SEG_BY_TBS]]></name>
+			<description><![CDATA[seg]]></description>
+			<tooltip><![CDATA[seg]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select tablespace_name "Tablespace", segment_name   ,segment_type,
+                                                                                  bytes/1024/1024 "Megabytes"
+                                    from DBA_segments
+                                   where --segment_type = 'TABLE'                                     and 
+                                   segment_name not like 'BIN$%'
+									 and (:NAME is null or 
+                                       instr(upper(tablespace_name),upper(:NAME)) > 0)
+                                   order by 4  desc]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[TABLES]]></name>
+			<description><![CDATA[TABLES	]]></description>
+			<tooltip><![CDATA[TABLEs]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[/* Formatted on 4/15/22 6:35:12 PM (QP5 v5.381) */
+  SELECT S.OWNER,
+         s.tablespace_name
+             "Name",
+         COUNT (s.bytes)
+             "Tables",
+         SUM (s.bytes / 1024 / 1024)
+             "Segment Usage",
+         (SELECT ((SUM (bytes)) / 1024 / 1024)
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             "Quota Usage",
+         (SELECT (CASE
+                      WHEN max_bytes = -1 THEN 'UNLIMITED'
+                      ELSE TO_CHAR (max_bytes / 1024 / 1024) || ' Mb'
+                  END)    "Quota"
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             Quota
+    FROM dba_segments s
+   WHERE     s.segment_type = 'TABLE'
+         AND (   :NAME IS NULL
+              OR INSTR (UPPER (tablespace_name), UPPER ( :NAME)) > 0)
+GROUP BY S.OWNER, s.tablespace_name]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[INDEX]]></name>
+			<description><![CDATA[index]]></description>
+			<tooltip><![CDATA[index]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[/* Formatted on 4/15/22 6:35:12 PM (QP5 v5.381) */
+  SELECT S.OWNER,
+         s.tablespace_name
+             "Name",
+         COUNT (s.bytes)
+             "Tables",
+         SUM (s.bytes / 1024 / 1024)
+             "Segment Usage",
+         (SELECT ((SUM (bytes)) / 1024 / 1024)
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             "Quota Usage",
+         (SELECT (CASE
+                      WHEN max_bytes = -1 THEN 'UNLIMITED'
+                      ELSE TO_CHAR (max_bytes / 1024 / 1024) || ' Mb'
+                  END)    "Quota"
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             Quota
+    FROM dba_segments s
+   WHERE     s.segment_type = 'INDEX'
+         AND (   :NAME IS NULL
+              OR INSTR (UPPER (tablespace_name), UPPER ( :NAME)) > 0)
+GROUP BY S.OWNER, s.tablespace_name]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[TABLE_PART]]></name>
+			<description><![CDATA[table part]]></description>
+			<tooltip><![CDATA[table part]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[/* Formatted on 4/15/22 6:37:54 PM (QP5 v5.381) */
+  SELECT S.OWNER,
+         s.tablespace_name
+             "Name",
+         COUNT (s.bytes)
+             "Tables",
+         SUM (s.bytes / 1024 / 1024)
+             "Segment Usage",
+         (SELECT ((SUM (bytes)) / 1024 / 1024)
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             "Quota Usage",
+         (SELECT (CASE
+                      WHEN max_bytes = -1 THEN 'UNLIMITED'
+                      ELSE TO_CHAR (max_bytes / 1024 / 1024) || ' Mb'
+                  END)    "Quota"
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             Quota
+    FROM dba_segments s
+   WHERE     s.segment_type = 'TABLE PARTITION'
+         AND (   :NAME IS NULL
+              OR INSTR (UPPER (tablespace_name), UPPER ( :NAME)) > 0)
+GROUP BY S.OWNER, s.tablespace_name]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[LOB_INDEX]]></name>
+			<description><![CDATA[lob index]]></description>
+			<tooltip><![CDATA[lob index]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[/* Formatted on 4/15/22 6:37:54 PM (QP5 v5.381) */
+  SELECT S.OWNER,
+         s.tablespace_name
+             "Name",
+         COUNT (s.bytes)
+             "Tables",
+         SUM (s.bytes / 1024 / 1024)
+             "Segment Usage",
+         (SELECT ((SUM (bytes)) / 1024 / 1024)
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             "Quota Usage",
+         (SELECT (CASE
+                      WHEN max_bytes = -1 THEN 'UNLIMITED'
+                      ELSE TO_CHAR (max_bytes / 1024 / 1024) || ' Mb'
+                  END)    "Quota"
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             Quota
+    FROM dba_segments s
+   WHERE     s.segment_type = 'LOBINDEX'
+         AND (   :NAME IS NULL
+              OR INSTR (UPPER (tablespace_name), UPPER ( :NAME)) > 0)
+GROUP BY S.OWNER, s.tablespace_name]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[INDEX PARTITION]]></name>
+			<description><![CDATA[index part	]]></description>
+			<tooltip><![CDATA[index part]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[/* Formatted on 4/15/22 6:37:54 PM (QP5 v5.381) */
+  SELECT S.OWNER,
+         s.tablespace_name
+             "Name",
+         COUNT (s.bytes)
+             "Tables",
+         SUM (s.bytes / 1024 / 1024)
+             "Segment Usage",
+         (SELECT ((SUM (bytes)) / 1024 / 1024)
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             "Quota Usage",
+         (SELECT (CASE
+                      WHEN max_bytes = -1 THEN 'UNLIMITED'
+                      ELSE TO_CHAR (max_bytes / 1024 / 1024) || ' Mb'
+                  END)    "Quota"
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             Quota
+    FROM dba_segments s
+   WHERE     s.segment_type = 'INDEX PARTITION'
+         AND (   :NAME IS NULL
+              OR INSTR (UPPER (tablespace_name), UPPER ( :NAME)) > 0)
+GROUP BY S.OWNER, s.tablespace_name]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[LOBSEGMENT]]></name>
+			<description><![CDATA[lob seg]]></description>
+			<tooltip><![CDATA[log seg]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[/* Formatted on 4/15/22 6:37:54 PM (QP5 v5.381) */
+  SELECT S.OWNER,
+         s.tablespace_name
+             "Name",
+         COUNT (s.bytes)
+             "Tables",
+         SUM (s.bytes / 1024 / 1024)
+             "Segment Usage",
+         (SELECT ((SUM (bytes)) / 1024 / 1024)
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             "Quota Usage",
+         (SELECT (CASE
+                      WHEN max_bytes = -1 THEN 'UNLIMITED'
+                      ELSE TO_CHAR (max_bytes / 1024 / 1024) || ' Mb'
+                  END)    "Quota"
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             Quota
+    FROM dba_segments s
+   WHERE     s.segment_type = 'LOBSEGMENT'
+         AND (   :NAME IS NULL
+              OR INSTR (UPPER (tablespace_name), UPPER ( :NAME)) > 0)
+GROUP BY S.OWNER, s.tablespace_name]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[SYSTEM STATISTICS]]></name>
+			<description><![CDATA[system ]]></description>
+			<tooltip><![CDATA[stat]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[/* Formatted on 4/15/22 6:37:54 PM (QP5 v5.381) */
+  SELECT S.OWNER,
+         s.tablespace_name
+             "Name",
+         COUNT (s.bytes)
+             "Tables",
+         SUM (s.bytes / 1024 / 1024)
+             "Segment Usage",
+         (SELECT ((SUM (bytes)) / 1024 / 1024)
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             "Quota Usage",
+         (SELECT (CASE
+                      WHEN max_bytes = -1 THEN 'UNLIMITED'
+                      ELSE TO_CHAR (max_bytes / 1024 / 1024) || ' Mb'
+                  END)    "Quota"
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             Quota
+    FROM dba_segments s
+   WHERE     s.segment_type = 'SYSTEM STATISTICS'
+         AND (   :NAME IS NULL
+              OR INSTR (UPPER (tablespace_name), UPPER ( :NAME)) > 0)
+GROUP BY S.OWNER, s.tablespace_name]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[NESTED TABLE]]></name>
+			<description><![CDATA[NT]]></description>
+			<tooltip><![CDATA[NT]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[]]></sql>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[LOB PARTITION]]></name>
+			<description><![CDATA[lob part]]></description>
+			<tooltip><![CDATA[lob part]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[/* Formatted on 4/15/22 6:37:54 PM (QP5 v5.381) */
+  SELECT S.OWNER,
+         s.tablespace_name
+             "Name",
+         COUNT (s.bytes)
+             "Tables",
+         SUM (s.bytes / 1024 / 1024)
+             "Segment Usage",
+         (SELECT ((SUM (bytes)) / 1024 / 1024)
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             "Quota Usage",
+         (SELECT (CASE
+                      WHEN max_bytes = -1 THEN 'UNLIMITED'
+                      ELSE TO_CHAR (max_bytes / 1024 / 1024) || ' Mb'
+                  END)    "Quota"
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             Quota
+    FROM dba_segments s
+   WHERE     s.segment_type = 'LOB PARTITION'
+         AND (   :NAME IS NULL
+              OR INSTR (UPPER (tablespace_name), UPPER ( :NAME)) > 0)
+GROUP BY S.OWNER, s.tablespace_name]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[CLUSTER]]></name>
+			<description><![CDATA[cluster]]></description>
+			<tooltip><![CDATA[clutser]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[/* Formatted on 4/15/22 6:37:54 PM (QP5 v5.381) */
+  SELECT S.OWNER,
+         s.tablespace_name
+             "Name",
+         COUNT (s.bytes)
+             "Tables",
+         SUM (s.bytes / 1024 / 1024)
+             "Segment Usage",
+         (SELECT ((SUM (bytes)) / 1024 / 1024)
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             "Quota Usage",
+         (SELECT (CASE
+                      WHEN max_bytes = -1 THEN 'UNLIMITED'
+                      ELSE TO_CHAR (max_bytes / 1024 / 1024) || ' Mb'
+                  END)    "Quota"
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             Quota
+    FROM dba_segments s
+   WHERE     s.segment_type in ('CLUSTER')
+         AND (   :NAME IS NULL
+              OR INSTR (UPPER (tablespace_name), UPPER ( :NAME)) > 0)
+GROUP BY S.OWNER, s.tablespace_name]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[ROLLBACK]]></name>
+			<description><![CDATA[rollbak]]></description>
+			<tooltip><![CDATA[rolback]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[/* Formatted on 4/15/22 6:37:54 PM (QP5 v5.381) */
+  SELECT S.OWNER,
+         s.tablespace_name
+             "Name",
+         COUNT (s.bytes)
+             "Tables",
+         SUM (s.bytes / 1024 / 1024)
+             "Segment Usage",
+         (SELECT ((SUM (bytes)) / 1024 / 1024)
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             "Quota Usage",
+         (SELECT (CASE
+                      WHEN max_bytes = -1 THEN 'UNLIMITED'
+                      ELSE TO_CHAR (max_bytes / 1024 / 1024) || ' Mb'
+                  END)    "Quota"
+            FROM dba_ts_quotas
+           WHERE tablespace_name = s.tablespace_name AND username = s.owner)
+             Quota
+    FROM dba_segments s
+   WHERE     s.segment_type in ('ROLLBACK')
+         AND (   :NAME IS NULL
+              OR INSTR (UPPER (tablespace_name), UPPER ( :NAME)) > 0)
+GROUP BY S.OWNER, s.tablespace_name]]></sql>
+				<binds>
+					<bind id="NAME">
+						<prompt><![CDATA[NAME]]></prompt>
+						<tooltip><![CDATA[NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+<item  reload="false"  reloadparent="false" removeFromParent="false" className="oracle.dbtools.raptor.report.addin.DrillReportAction" classArgs="a7d6fab8-0114-1000-8204-c0a8010a29c4" toolbar="false" ><title>visha</title></item>	</display>
+	<folder>
+		<name><![CDATA[Sessions]]></name>
+		<tooltip><![CDATA[Sessions]]></tooltip>
+		<description><![CDATA[Session]]></description>
+			<display id="2d887eda-0180-1000-802f-c0a83801c26d" type="" style="Table" enable="true">
+			<name><![CDATA[Sessions]]></name>
+			<description><![CDATA[Sessions]]></description>
+			<tooltip><![CDATA[Sessions]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query minversion="10.1" maxversion="11.1.9999">
+				<sql><![CDATA[with vs as (select rownum rnum,
+                                                  							  inst_id,
+                                                                              sid,
+                                                                              serial#,
+                                                                              status,
+                                                                              username,
+                                                                              last_call_et,
+                                                                              command,
+                                                                              machine,
+                                                                              osuser,
+                                                                              module,
+                                                                              action,
+                                                                              resource_consumer_group,
+                                                                              client_info,
+                                                                              client_identifier,
+                                                                              type,
+                                                                              terminal,
+                                                                              sql_id,
+                                                                              sql_child_number
+                                                                         from gv$session) 
+                                                             select vs.inst_id, vs.sid ,serial# serial, vs.sql_id, vs.sql_child_number,
+                                                                    vs.username "Username", 
+                                                                    case when vs.status = 'ACTIVE' 
+                                                                              then last_call_et 
+                                                                         else null end "Seconds in Wait",
+                                                                    vs.machine "Machine",
+                                                                    vs.osuser "OS User", 
+                                                                    lower(vs.status) "Status",
+                                                                    vs.module "Module",
+                                                                    vs.action "Action",
+                                                                    vs.resource_consumer_group,
+                                                                    vs.client_info,
+                                                                    vs.client_identifier
+                                                               from vs 
+                                                              where vs.USERNAME is not null
+                                                                and nvl(vs.osuser,'x') <> 'SYSTEM'
+                                                                and vs.type <> 'BACKGROUND'
+                                                                order by 1,2,3]]></sql>
+			</query>
+			<query minversion="11.2">
+				<sql><![CDATA[with vs as (select rownum rnum,
+                                                  							  inst_id,
+                                                                              sid,
+                                                                              serial#,
+                                                                              status,
+                                                                              username,
+                                                                              last_call_et,
+                                                                              command,
+                                                                              machine,
+                                                                              osuser,
+                                                                              module,
+                                                                              action,
+                                                                              resource_consumer_group,
+                                                                              client_info,
+                                                                              client_identifier,
+                                                                              type,
+                                                                              terminal,
+                                                                              sql_id,
+                                                                              sql_child_number
+                                                                         from gv$session) 
+                                                             select vs.inst_id, vs.sid ,serial# serial, vs.sql_id, vs.sql_child_number,
+                                                                    vs.username "Username",
+                                                                    case when vs.status = 'ACTIVE' 
+                                                                              then last_call_et 
+                                                                         else null end "Seconds in Wait",
+                                                                    (select command_name from v$sqlcommand where command_type = vs.command ) "Command",
+                                                                    vs.machine "Machine",
+                                                                    vs.osuser "OS User", 
+                                                                    lower(vs.status) "Status",
+                                                                    vs.module "Module",
+                                                                    vs.action "Action",
+                                                                    vs.resource_consumer_group,
+                                                                    vs.client_info,
+                                                                    vs.client_identifier
+                                                               from vs 
+                                                              where vs.USERNAME is not null
+                                                                and nvl(vs.osuser,'x') <> 'SYSTEM'
+                                                                and vs.type <> 'BACKGROUND'
+                                                                order by 1,2,3]]></sql>
+			</query>
+			<display id="null" type="" style="Code" enable="true">
+				<name><![CDATA[Active SQL]]></name>
+				<description><![CDATA[The Current or last SQL for the selected session]]></description>
+				<tooltip><![CDATA[The Current or last SQL for the selected session]]></tooltip>
+				<drillclass><![CDATA[]]></drillclass>
+				<CustomValues>
+				</CustomValues>
+				<query>
+					<sql><![CDATA[select replace(q.SQL_FULLTEXT,chr(0)) sql_text
+                                        from gv$session s,gv$sql q
+                                        where s.sql_address = q.address
+                                         and s.sql_hash_value = q.hash_value
+                                         and s.sql_child_number = q.child_number                                         
+                                         and s.inst_id = q.inst_id
+                                         and s.sid = :SID 
+                                         and s.inst_id = :INST_ID]]></sql>
+					<binds>
+						<bind id="SID">
+							<prompt><![CDATA[SID]]></prompt>
+							<tooltip><![CDATA[SID]]></tooltip>
+							<value><![CDATA[NULL_VALUE]]></value>
+							<bracket><![CDATA[null]]></bracket>
+						</bind>
+						<bind id="INST_ID">
+							<prompt><![CDATA[INST_ID]]></prompt>
+							<tooltip><![CDATA[INST_ID]]></tooltip>
+							<value><![CDATA[NULL_VALUE]]></value>
+							<bracket><![CDATA[null]]></bracket>
+						</bind>
+					</binds>
+				</query>
+			</display>
+			<display id="null" type="" style="Table" enable="true">
+				<name><![CDATA[Explain Plan]]></name>
+				<description><![CDATA[]]></description>
+				<tooltip><![CDATA[]]></tooltip>
+				<drillclass><![CDATA[]]></drillclass>
+				<CustomValues>
+					<TYPE><![CDATA[horizontal]]></TYPE>
+				</CustomValues>
+				<query minversion="10" maxversion="10.100">
+					<sql><![CDATA[SELECT sp.inst_id, plan_hash_value,LPAD('  ',4*(DEPTH-1))||operation||' '||options
+   ||' '||object_name
+   ||' '||DECODE(id, 0, 'Cost = '||position) "Query Plan",lpad(
+                        CASE
+                                WHEN cardinality > 1000000
+                                THEN to_char(trunc(cardinality/1000000)) || 'M'
+                                WHEN cardinality > 1000
+                                THEN to_char(trunc(cardinality/1000)) || 'K'
+                                ELSE cardinality || ' '
+                        END
+                ,       6
+                ,       ' '
+                ) AS "Rows" 
+  --  nvl(entries,0) as "Rowsource Time"
+   FROM gv$sql_plan sp
+  WHERE sp.sql_id = :SQL_ID and sp.child_number = :SQL_CHILD_NUMBER
+  order by sp.plan_hash_value,sp.inst_id,sp.child_address,sp.id]]></sql>
+				</query>
+				<query minversion="11">
+					<sql><![CDATA[SELECT  LPAD('  ',4*(DEPTH-1))||operation||' '||options
+   ||' '||object_name
+   ||' '||DECODE(id, 0, 'Cost = '||position) "Query Plan",lpad(
+                        CASE
+                                WHEN cardinality > 1000000
+                                THEN to_char(trunc(cardinality/1000000)) || 'M'
+                                WHEN cardinality > 1000
+                                THEN to_char(trunc(cardinality/1000)) || 'K'
+                                ELSE cardinality || ' '
+                        END
+                ,       6
+                ,       ' '
+                ) AS "Rows"
+    --,nvl(entries,0) as "Rowsource Time(s)"
+   FROM gv$sql_plan sp
+  WHERE sp.sql_id = :SQL_ID and sp.child_number = :SQL_CHILD_NUMBER and sp.inst_id = :INST_ID
+  ORDER by sp.plan_hash_value, sp.id]]></sql>
+				</query>
+			</display>
+			<display id="null" type="" style="Table" enable="true">
+				<name><![CDATA[Waits]]></name>
+				<description><![CDATA[Session Waits]]></description>
+				<tooltip><![CDATA[Session Waits]]></tooltip>
+				<drillclass><![CDATA[]]></drillclass>
+				<CustomValues>
+					<TYPE><![CDATA[horizontal]]></TYPE>
+				</CustomValues>
+				<query>
+					<sql><![CDATA[select event,p1,p2,
+                                   case when p3 = 0 then null else p3 end p3
+                              from gv$session_wait
+                             where sid = :SID and inst_id = :INST_ID]]></sql>
+				</query>
+			</display>
+			<display id="null" type="" style="Table" enable="true">
+				<name><![CDATA[Server]]></name>
+				<description><![CDATA[Server Details]]></description>
+				<tooltip><![CDATA[Server Details]]></tooltip>
+				<drillclass><![CDATA[]]></drillclass>
+				<CustomValues>
+					<TYPE><![CDATA[horizontal]]></TYPE>
+				</CustomValues>
+				<query>
+					<sql><![CDATA[select s.SID,s.status,s.username,s.process,s.LOGON_TIME,
+                                   s.logon_time since,s.server,s.type,p.spid,p.TRACEID,
+                                   s.serial#
+                              from gv$session s, gv$process p
+                             where s.sid = :SID and s.serial# = :SERIAL and s.inst_id = :INST_ID
+                               and s.paddr = p.addr and s.inst_id = p.inst_id]]></sql>
+				</query>
+			</display>
+			<display id="null" type="" style="Table" enable="true">
+				<name><![CDATA[Client]]></name>
+				<description><![CDATA[Client Info]]></description>
+				<tooltip><![CDATA[Client Info]]></tooltip>
+				<drillclass><![CDATA[]]></drillclass>
+				<CustomValues>
+					<TYPE><![CDATA[horizontal]]></TYPE>
+				</CustomValues>
+				<query>
+					<sql><![CDATA[select osuser,machine,terminal,CLIENT_INFO,CLIENT_IDENTIFIER
+                              from gv$session
+                             where sid = :SID and serial# = :SERIAL and inst_id = :INST_ID]]></sql>
+				</query>
+			</display>
+			<display id="null" type="" style="Table" enable="true">
+				<name><![CDATA[Application]]></name>
+				<description><![CDATA[Application Info    ]]></description>
+				<tooltip><![CDATA[Application Info]]></tooltip>
+				<drillclass><![CDATA[]]></drillclass>
+				<CustomValues>
+					<TYPE><![CDATA[horizontal]]></TYPE>
+				</CustomValues>
+				<query>
+					<sql><![CDATA[select  (select command_name from v$sqlcommand where command_type = command ) "Command"
+                            ,LAST_CALL_ET,program,module,action
+                             from gv$session where sid = :SID and inst_id = :INST_ID]]></sql>
+				</query>
+			</display>
+			<display id="null" type="" style="Table" enable="true">
+				<name><![CDATA[Contention]]></name>
+				<description><![CDATA[Contention ( Locks ) ]]></description>
+				<tooltip><![CDATA[Contention ( Locks ) ]]></tooltip>
+				<drillclass><![CDATA[]]></drillclass>
+				<CustomValues>
+					<TYPE><![CDATA[horizontal]]></TYPE>
+				</CustomValues>
+				<query>
+					<sql><![CDATA[with locks as(
+                                select session_id,lock_type,
+                                       mode_held,mode_requested,lock_id1,lock_id2,blocking_others
+                                  from sys.dba_lock),
+                            waiters as (
+                                select w.session_id waiting_session,
+                                        h.session_id holding_session,
+                                        w.lock_type lock_type,
+                                        h.mode_held mode_held,
+                                        w.mode_requested mode_requested,
+                                        w.lock_id1,
+                                        w.lock_id2
+                                  from locks w, locks h
+                                 where h.blocking_others =  'Blocking'
+                                  and  h.mode_held      !=  'None'
+                                  and  h.mode_held      !=  'Null'
+                                  and  w.mode_requested !=  'None'
+                                  and  w.lock_type       =  h.lock_type
+                                  and  w.lock_id1        =  h.lock_id1
+                                  and  w.lock_id2        =  h.lock_id2
+                                  and  (w.session_id = :SID
+                                        or
+                                        h.session_id = :SID)),
+                            blockers as(
+                                select holding_session waiting_session, to_number(null) holding_session, 
+                                       'None' lock_type, null mode_held, null mode_requested, 
+                                       null lock_id1, null lock_id2
+                                  from waiters
+                                 minus
+                                select waiting_session waiting_session, to_number(null) holding_session, 
+                                       'None' lock_type, null mode_held, null mode_requested, 
+                                       null lock_id1, null lock_id2
+                                  from waiters),
+                            waiters_blockers as(
+                                select waiting_session,holding_session,lock_type,mode_held,mode_requested,lock_id1,lock_id2
+                                  from waiters
+                                 union all
+                                select waiting_session,holding_session,lock_type,mode_held,mode_requested,lock_id1,lock_id2
+                                  from blockers),
+                            lock_objects as(
+                                select session_id,cnt lock_obj_count,
+                                       case when cnt = 1 then object_name
+                                            else null end object_name,
+                                       object_id,owner,object_type
+                                  from(
+                                    select session_id,count(distinct object_name) cnt,max(object_name) object_name,
+                                           max(lo.object_id) object_id, max(ao.owner) owner,max(object_type) object_type
+                                      from gv$locked_object lo,all_objects ao,waiters_blockers wb
+                                     where lo.object_id = ao.object_id and lo.inst_id = :INST_ID
+                                       and (wb.waiting_session = lo.session_id
+                                            or
+                                            wb.holding_session = lo.session_id)
+                                     group by session_id)),
+                            wait_block_ses as(
+                            select waiting_session,holding_session,lock_type,mode_held,mode_requested,
+                                   s.username,s.osuser,s.CLIENT_INFO,s.CLIENT_IDENTIFIER,o.object_name,o.owner,o.object_id,module,o.object_type,o.lock_obj_count,
+                                    (select command_name from v$sqlcommand where command_type = s.command ) "Command"
+                              from waiters_blockers wb, gv$session s,
+                                   lock_objects o
+                             where s.sid = wb.waiting_session and s.inst_id = :INST_ID
+                               and o.session_id(+) = wb.waiting_session
+                              )
+                            select  case when holding_session is null then 'Lock'
+                                         else 'Lock Waiting'
+                                   end status,
+                                   waiting_session,
+                                   username,
+                                    object_name,      
+                                   object_id,owner,object_type
+                              from wait_block_ses 
+                             start with holding_session is null
+                             connect by prior waiting_session =  holding_session]]></sql>
+				</query>
+			</display>
+			<display id="null" type="" style="Table" enable="true">
+				<name><![CDATA[Long Opsq]]></name>
+				<description><![CDATA[% done of long running transactions]]></description>
+				<tooltip><![CDATA[Long operations]]></tooltip>
+				<drillclass><![CDATA[]]></drillclass>
+				<CustomValues>
+					<TYPE><![CDATA[horizontal]]></TYPE>
+				</CustomValues>
+				<query>
+					<sql><![CDATA[SELECT
+								       TRUNC(sl.elapsed_seconds/60) || ':' || MOD(sl.elapsed_seconds,60) elapsed,
+								       TRUNC(sl.time_remaining/60) || ':' || MOD(sl.time_remaining,60) remaining,
+								       ROUND(sl.sofar/sl.totalwork*100, 2) progress_pct, inst_id
+							FROM         gv$session_longops sl
+							WHERE  sl.sql_id =:SQL_ID and sl.inst_id = :INST_ID
+							AND sl.time_remaining > 0]]></sql>
+				</query>
+			</display>
+			<display id="null" type="" style="Table" enable="true">
+				<name><![CDATA[Open_cur]]></name>
+				<description><![CDATA[]]></description>
+				<tooltip><![CDATA[]]></tooltip>
+				<drillclass><![CDATA[]]></drillclass>
+				<CustomValues>
+					<TYPE><![CDATA[horizontal]]></TYPE>
+				</CustomValues>
+				<query>
+					<sql><![CDATA[/* Formatted on 4/19/22 10:22:53 AM (QP5 v5.365) */
+SELECT c.INST_ID,
+       c.sid,
+       s.username,
+       c.SQL_ID,
+       c.HASH_VALUE,
+       c.ADDRESS,
+       c.SADDR,
+       c.SQL_TEXT,
+       c.LAST_SQL_ACTIVE_TIME,
+       c.SQL_EXEC_ID,
+       c.CURSOR_TYPE,
+       c.CHILD_ADDRESS,
+       c.CON_ID
+  FROM gv$open_cursor c, gv$session s
+ WHERE s.sid = c.sid AND s.username IS NOT NULL and 
+(:SID is null or c.sid = :SID)]]></sql>
+					<binds>
+						<bind id="SID">
+							<prompt><![CDATA[SID]]></prompt>
+							<tooltip><![CDATA[SID]]></tooltip>
+							<value><![CDATA[NULL_VALUE]]></value>
+							<bracket><![CDATA[null]]></bracket>
+						</bind>
+					</binds>
+				</query>
+			</display>
+			<display id="null" type="" style="Table" enable="true">
+				<name><![CDATA[ASHTOP]]></name>
+				<description><![CDATA[]]></description>
+				<tooltip><![CDATA[]]></tooltip>
+				<drillclass><![CDATA[]]></drillclass>
+				<CustomValues>
+					<TYPE><![CDATA[horizontal]]></TYPE>
+				</CustomValues>
+				<query>
+					<sql><![CDATA[]]></sql>
+				</query>
+			</display>
+			<display id="null" type="" style="Table" enable="true">
+				<name><![CDATA[ASHTOP_block]]></name>
+				<description><![CDATA[]]></description>
+				<tooltip><![CDATA[]]></tooltip>
+				<drillclass><![CDATA[]]></drillclass>
+				<CustomValues>
+					<TYPE><![CDATA[horizontal]]></TYPE>
+				</CustomValues>
+				<query>
+					<sql><![CDATA[SELECT
+    * 
+FROM (
+    WITH bclass AS (SELECT /*+ INLINE */ class, ROWNUM r from v$waitstat)
+    SELECT /*+ LEADING(a) USE_HASH(u) */
+        COUNT(*)                                                     totalseconds
+      , ROUND(COUNT(*) / ((CAST(sysdate AS DATE) - CAST(sysdate-30/1440 AS DATE)) * 86400), 1) AAS
+      , LPAD(ROUND(RATIO_TO_REPORT(COUNT(*)) OVER () * 300)||'%',5,' ')||' |' "%This"
+      , inst_id||':<'||SESSION_ID||'@'||SESSION_SERIAL#||':'||sample_time||'>:<'||username||':'||PROGRAM||':'||MODULE||':'||MACHINE||':'||PORT||'>:<'||SQL_OPNAME||':'||sql_id||'>:'||event2||':'||event
+      , TO_CHAR(MIN(sample_time), 'YYYY-MM-DD HH24:MI:SS') first_seen
+      , TO_CHAR(MAX(sample_time), 'YYYY-MM-DD HH24:MI:SS') last_seen
+--    , MAX(sql_exec_id) - MIN(sql_exec_id) 
+      , COUNT(DISTINCT sql_exec_start||':'||sql_exec_id) dist_sqlexec_seen
+      , COUNT(DISTINCT sample_time) dist_timestamps
+    FROM
+        (SELECT
+             a.*
+           , session_id sid
+           , session_serial# serial
+           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p1 ELSE null END, '0XXXXXXXXXXXXXXX') p1hex
+           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p2 ELSE null END, '0XXXXXXXXXXXXXXX') p2hex
+           , TO_CHAR(CASE WHEN session_state = 'WAITING' THEN p3 ELSE null END, '0XXXXXXXXXXXXXXX') p3hex
+           , TRUNC(px_flags / 2097152) dop
+           , NVL(a.event, a.session_state)||
+                CASE 
+                    WHEN a.event like 'enq%' AND session_state = 'WAITING'
+                    THEN ' [mode='||BITAND(p1, POWER(2,14)-1)||']'
+                    WHEN a.event IN (SELECT name FROM v$event_name WHERE parameter3 = 'class#')
+                    THEN ' ['||CASE WHEN a.p3 <= (SELECT MAX(r) FROM bclass) 
+                               THEN (SELECT class FROM bclass WHERE r = a.p3)
+                               ELSE (SELECT DECODE(MOD(BITAND(a.p3,TO_NUMBER('FFFF','XXXX')) - 17,2),0,'undo header',1,'undo data', 'error') FROM dual)
+                               END  ||']' 
+                    ELSE null 
+                END event2 -- event is NULL in ASH if the session is not waiting (session_state = ON CPU)
+           , CASE WHEN a.session_type = 'BACKGROUND' OR REGEXP_LIKE(a.program, '.*\([PJ]\d+\)') THEN
+                REGEXP_REPLACE(SUBSTR(a.program,INSTR(a.program,'(')), '\d', 'n')
+             ELSE
+                '('||REGEXP_REPLACE(REGEXP_REPLACE(a.program, '(.*)@(.*)(\(.*\))', '\1'), '\d', 'n')||')'
+             END || ' ' program2
+           , CASE WHEN BITAND(time_model, POWER(2, 01)) = POWER(2, 01) THEN 'DBTIME '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 02)) = POWER(2, 02) THEN 'BACKGROUND '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 03)) = POWER(2, 03) THEN 'CONNECTION_MGMT '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 04)) = POWER(2, 04) THEN 'PARSE '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 05)) = POWER(2, 05) THEN 'FAILED_PARSE '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 06)) = POWER(2, 06) THEN 'NOMEM_PARSE '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 07)) = POWER(2, 07) THEN 'HARD_PARSE '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 08)) = POWER(2, 08) THEN 'NO_SHARERS_PARSE '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 09)) = POWER(2, 09) THEN 'BIND_MISMATCH_PARSE '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 30)) = POWER(2, 30) THEN 'SQL_EXECUTION '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 11)) = POWER(2, 11) THEN 'PLSQL_EXECUTION '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 12)) = POWER(2, 12) THEN 'PLSQL_RPC '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 13)) = POWER(2, 13) THEN 'PLSQL_COMPILATION '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 14)) = POWER(2, 14) THEN 'JAVA_EXECUTION '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 15)) = POWER(2, 15) THEN 'BIND '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 16)) = POWER(2, 16) THEN 'CURSOR_CLOSE '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 17)) = POWER(2, 17) THEN 'SEQUENCE_LOAD '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 18)) = POWER(2, 18) THEN 'INMEMORY_QUERY '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 19)) = POWER(2, 19) THEN 'INMEMORY_POPULATE '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 20)) = POWER(2, 20) THEN 'INMEMORY_PREPOPULATE '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 21)) = POWER(2, 21) THEN 'INMEMORY_REPOPULATE '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 22)) = POWER(2, 22) THEN 'INMEMORY_TREPOPULATE '  END
+           ||CASE WHEN BITAND(time_model, POWER(2, 23)) = POWER(2, 23) THEN 'TABLESPACE_ENCRYPTION ' END time_model_name 
+        FROM gv$active_session_history a) a
+      , dba_users u
+      , (SELECT
+             object_id,data_object_id,owner,object_name,subobject_name,object_type
+           , owner||'.'||object_name obj
+           , owner||'.'||object_name||' ['||object_type||']' objt
+         FROM dba_objects) o
+    WHERE
+        a.user_id = u.user_id (+)
+    AND a.current_obj# = o.object_id(+) and 
+     (:SID is null or sid = :SID) 
+    AND USERNAME<>'SYS'and blocking_session IS NOT NULL  
+    AND sample_time BETWEEN sysdate-30/1440 AND sysdate
+    GROUP BY
+        inst_id||':<'||SESSION_ID||'@'||SESSION_SERIAL#||':'||sample_time||'>:<'||username||':'||PROGRAM||':'||MODULE||':'||MACHINE||':'||PORT||'>:<'||SQL_OPNAME||':'||sql_id||'>:'||event2||':'||event
+    ORDER BY
+        TotalSeconds DESC
+       , inst_id||':<'||SESSION_ID||'@'||SESSION_SERIAL#||':'||sample_time||'>:<'||username||':'||PROGRAM||':'||MODULE||':'||MACHINE||':'||PORT||'>:<'||SQL_OPNAME||':'||sql_id||'>:'||event2||':'||event
+)
+WHERE
+    ROWNUM <= 45]]></sql>
+					<binds>
+						<bind id="SID">
+							<prompt><![CDATA[SID]]></prompt>
+							<tooltip><![CDATA[SID]]></tooltip>
+							<value><![CDATA[NULL_VALUE]]></value>
+							<bracket><![CDATA[null]]></bracket>
+						</bind>
+					</binds>
+				</query>
+			</display>
+		</display>
+	</folder>
+	<display id="31b0f808-0180-1000-8002-c0a83801613a" type="" style="Table" enable="true">
+		<name><![CDATA[USER]]></name>
+		<description><![CDATA[USER]]></description>
+		<tooltip><![CDATA[USER]]></tooltip>
+		<drillclass><![CDATA[]]></drillclass>
+		<CustomValues>
+			<TYPE><![CDATA[horizontal]]></TYPE>
+		</CustomValues>
+		<query>
+			<sql><![CDATA[/* Formatted on 4/16/22 2:55:01 PM (QP5 v5.381) */
+SELECT USER_ID,
+       USERNAME,
+       ACCOUNT_STATUS,
+       LAST_LOGIN,
+       CREATED,
+       PROFILE,
+       LOCK_DATE,
+       EXPIRY_DATE,
+       DEFAULT_TABLESPACE,
+       TEMPORARY_TABLESPACE,
+       LOCAL_TEMP_TABLESPACE,
+       PASSWORD,
+       INITIAL_RSRC_CONSUMER_GROUP,
+       EXTERNAL_NAME,
+       PASSWORD_VERSIONS,
+       EDITIONS_ENABLED,
+       AUTHENTICATION_TYPE,
+       PROXY_ONLY_CONNECT,
+       COMMON,
+       ORACLE_MAINTAINED,
+       INHERITED,
+       DEFAULT_COLLATION,
+       IMPLICIT,
+       ALL_SHARD,
+       PASSWORD_CHANGE_DATE
+  FROM DBA_USERS
+  ORDER BY CREATED DESC]]></sql>
+		</query>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[DDL]]></name>
+			<description><![CDATA[only for user creation]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select dbms_metadata.get_ddl('USER', u.username) ||';' AS ddl
+from   dba_users u
+where  u.username = :USERNAME
+union all
+select dbms_metadata.get_granted_ddl('TABLESPACE_QUOTA', tq.username) ||';' AS ddl
+from   dba_ts_quotas tq
+where  tq.username = :USERNAME
+and    rownum = 1
+union all
+select dbms_metadata.get_granted_ddl('DEFAULT_ROLE', rp.grantee)  ||';' AS ddl
+from   dba_role_privs rp
+where  rp.grantee = :USERNAME
+and    rp.default_role = 'YES'
+and    rownum = 1
+union all
+select to_clob('/* Start profile creation script in case they are missing')  ||';'  AS ddl
+from   dba_users u
+where  u.username = :USERNAME
+and    u.profile <> 'DEFAULT'
+and    rownum = 1
+union all
+select dbms_metadata.get_ddl('PROFILE', u.profile)  ||';'  AS ddl
+from   dba_users u
+where  u.username = :USERNAME
+and    u.profile <> 'DEFAULT'
+union all
+select to_clob('End profile creation script */')   ||';' AS ddl
+from   dba_users u
+where  u.username = :USERNAME
+and    u.profile <> 'DEFAULT'
+and    rownum = 1]]></sql>
+				<binds>
+					<bind id="USERNAME">
+						<prompt><![CDATA[USERNAME]]></prompt>
+						<tooltip><![CDATA[USERNAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[Grant_Role]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select 'GRANT '||GRANTED_ROLE||' TO '||GRANTEE|| case when ADMIN_OPTION='YES' then ' WITH ADMIN OPTION;' else ';' end "Granted Roles"
+from dba_role_privs where grantee= :USERNAME]]></sql>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[Grant_system]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select 'GRANT '||PRIVILEGE||' TO '||GRANTEE|| case when ADMIN_OPTION='YES' then ' WITH ADMIN OPTION;' else ';' end "Granted System Privileges"
+from dba_sys_privs where grantee= :USERNAME]]></sql>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[Grant_OBJ]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select 'GRANT '||PRIVILEGE||' ON '||OWNER||'.'||TABLE_NAME||' TO '||GRANTEE||case when GRANTABLE='YES' then ' WITH GRANT OPTION;' else ';' end "Granted Object Privileges"
+from DBA_TAB_PRIVS where GRANTEE=: USERNAME]]></sql>
+				<binds>
+					<bind id="USERNAME">
+						<prompt><![CDATA[USERNAME]]></prompt>
+						<tooltip><![CDATA[USERNAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[OBJ]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select owner                      "Owner",
+                                   initcap(object_type)       "Object_Type", 
+                                   object_name                "Object_Name", 
+                                   initcap(status)            "Status", 
+                                   created                    "Date_Created", 
+                                   nvl(last_ddl_time,created) "Last_DDL",
+                                   owner                       sdev_link_owner,
+                                   object_name                 sdev_link_name,
+                                   object_type                 sdev_link_type
+                              from sys.all_objects
+                             where substr(object_name,1,4) != 'BIN$'
+                               and substr(object_name,1,3) != 'DR$'
+                               and (:USERNAME is null or
+                                     upper(owner) LIKE upper(:USERNAME))
+                               and (:OBJECT_NAME is null or 
+                                    upper(object_name) LIKE upper(:OBJECT_NAME))
+                             order by owner, object_type, object_name]]></sql>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[DEPS]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select owner                 "Owner", 
+                                   name                  "Name",
+                                   type                  "Type",
+                                   referenced_owner      "Referenced_Owner",
+                                   referenced_name       "Referenced_Name",
+                                   referenced_type       "Referenced_Type",
+                                   referenced_link_name  "Referenced_Link_Name",
+                                   dependency_type       "Dependency_Type",
+                                   owner                  sdev_link_owner,
+                                   name                   sdev_link_name,
+                                   type                   sdev_link_type
+                              from sys.all_dependencies
+                             where (:USERNAME is null or
+                                    upper(owner) LIKE upper(:USERNAME))
+                               and substr(name,1,4) != 'BIN$'
+                               and substr(referenced_name,1,4) != 'BIN$'
+                             order by owner, name, referenced_owner, referenced_name]]></sql>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[INVALID]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select owner                "Owner",
+                                   initcap(object_type) "Object_Type",
+                                   object_name          "Object_Name",
+                                   owner                 sdev_link_owner,
+                                   object_name           sdev_link_name,
+                                   object_type           sdev_link_type
+                              from sys.all_objects
+                             where status = 'INVALID'
+                               and substr(object_name,1,4) != 'BIN$'
+                               and substr(object_name,1,3) != 'DR$'
+                               and (:USERNAME is null or
+                                     upper(owner) LIKE upper(:USERNAME))
+                             order by owner, object_type, object_name]]></sql>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[OBJ_COUNT]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select owner                "Owner",
+                                   initcap(object_type) "Object Type",
+                                   count(*)             "Object Count"
+                              from sys.all_objects
+                             where substr(object_name,1,4) != 'BIN$'
+                               and substr(object_name,1,3) != 'DR$'
+                               and (:USERNAME is null or
+                                     upper(owner) LIKE upper(:USERNAME))
+                             group by owner, initcap(object_type)]]></sql>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[SYNONYMS]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select s.synonym_name  "Name",
+                                   s.table_owner   "Object_Owner",
+                                   s.table_name    "Object_Name",
+                                   s.db_link       "Database_Link",
+                                   o.object_type   "Object_Type",
+                                   o.owner          sdev_link_owner, 
+                                   o.object_name    sdev_link_name, 
+                                   o.object_type    sdev_link_type
+                              from sys.all_synonyms s,
+                                   all_objects o
+                             where s.table_owner = o.owner
+                               and s.table_name  = o.object_name
+                               and substr(s.synonym_name,1,1) != '/'
+                               and (:USERNAME is null or
+                                    upper(s.OWNER) LIKE upper(:USERNAME))
+                             order by synonym_name]]></sql>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[SIZE]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select 'ALL','ALL',ceil(sum(bytes)/1024/1024)  "size mb" from dba_segments where owner=UPPER(:USERNAME)group by owner
+UNION ALL
+select OWNER,SEGMENT_TYPE,ceil(sum(bytes)/1024/1024)  "size mb" from dba_segments where owner=UPPER(:USERNAME)group by OWNER,SEGMENT_TYPE]]></sql>
+				<binds>
+					<bind id="USERNAME">
+						<prompt><![CDATA[USERNAME]]></prompt>
+						<tooltip><![CDATA[USERNAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[QUOTAS]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[select tablespace_name "Tablespace_Name", 
+                                      username "Username",
+                                      bytes/1024/1024 "Megabytes", 
+                                      (case when max_bytes = -1 then null 
+                                            else max_bytes/1024/1024 end) "Max_Megabytes",
+                                      (case when max_bytes = -1 then 'UNLIMITED' 
+                                            else null end) "Quota"
+                                 from sys.dba_ts_quotas
+                                where (:USERNAME is null or 
+                                       instr(lower(tablespace_name),lower(:USERNAME)) > 0)
+                                order by tablespace_name, username]]></sql>
+				<binds>
+					<bind id="USERNAME">
+						<prompt><![CDATA[USERNAME]]></prompt>
+						<tooltip><![CDATA[USERNAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[Resource_Group]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[SELECT username, resource_consumer_group 
+ FROM   v$session
+ WHERE  username =:USERNAME]]></sql>
+				<binds>
+					<bind id="USERNAME">
+						<prompt><![CDATA[USERNAME]]></prompt>
+						<tooltip><![CDATA[USERNAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+	</display>
+	<display id="3267d399-0180-1000-8020-c0a83801613a" type="" style="Table" enable="true">
+		<name><![CDATA[All Objects]]></name>
+		<description><![CDATA[For each object, lists the owner, name, type (table, view, index, and so on), status (valid or invalid), the date it was created, and the date when the last data definition language (DDL) operation was performed on it. The Last DDL date can help you to find if any changes to the object definitions have been made on or after a specific time.
+
+]]></description>
+		<tooltip><![CDATA[All Objects]]></tooltip>
+		<drillclass><![CDATA[]]></drillclass>
+		<CustomValues>
+			<TYPE><![CDATA[horizontal]]></TYPE>
+		</CustomValues>
+		<query>
+			<sql><![CDATA[SELECT owner,
+         object_name,
+         status,
+         object_type,
+         created,
+         last_ddl_time
+    FROM sys.all_objects
+   WHERE     SUBSTR (object_name, 1, 4) != 'BIN$'
+         AND SUBSTR (object_name, 1, 3) != 'DR$'
+ORDER BY owner, object_type, object_name]]></sql>
+		</query>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[ddl]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[SELECT DBMS_METADATA.get_ddl (u.OBJECT_TYPE, u.OBJECT_NAME, u.OWNER) || ';'    AS ddl
+  FROM dba_objects u
+ WHERE     u.OWNER = :OWNER
+       AND U.OBJECT_TYPE = :OBJECT_TYPE
+       AND OBJECT_NAME = :OBJECT_NAME]]></sql>
+				<binds>
+					<bind id="OWNER">
+						<prompt><![CDATA[OWNER]]></prompt>
+						<tooltip><![CDATA[OWNER]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+					<bind id="OBJECT_TYPE">
+						<prompt><![CDATA[OBJECT_TYPE]]></prompt>
+						<tooltip><![CDATA[OBJECT_TYPE]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+					<bind id="OBJECT_NAME">
+						<prompt><![CDATA[OBJECT_NAME]]></prompt>
+						<tooltip><![CDATA[OBJECT_NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+		<display id="" type="" style="Table" enable="true">
+			<name><![CDATA[GRANT]]></name>
+			<description><![CDATA[]]></description>
+			<tooltip><![CDATA[]]></tooltip>
+			<drillclass><![CDATA[]]></drillclass>
+			<CustomValues>
+				<TYPE><![CDATA[horizontal]]></TYPE>
+			</CustomValues>
+			<query>
+				<sql><![CDATA[SELECT    'GRANT '
+       || PRIVILEGE
+       || ' ON '
+       || OWNER
+       || '.'
+       || TABLE_NAME
+       || ' TO '
+       || GRANTEE
+       || CASE WHEN GRANTABLE = 'YES' THEN ' WITH GRANT OPTION;' ELSE ';' END   
+  FROM DBA_TAB_PRIVS
+ WHERE OWNER = :OWNER  AND TABLE_NAME = :OBJECT_NAME;]]></sql>
+				<binds>
+					<bind id="OWNER">
+						<prompt><![CDATA[OWNER]]></prompt>
+						<tooltip><![CDATA[OWNER]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+					<bind id="OBJECT_NAME">
+						<prompt><![CDATA[OBJECT_NAME]]></prompt>
+						<tooltip><![CDATA[OBJECT_NAME]]></tooltip>
+						<value><![CDATA[NULL_VALUE]]></value>
+						<bracket><![CDATA[null]]></bracket>
+					</bind>
+				</binds>
+			</query>
+		</display>
+	</display>
+</folder>
+</displays>
